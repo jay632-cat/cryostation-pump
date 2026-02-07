@@ -22,7 +22,7 @@ class PumpGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Cryostation Pump Monitor")
-        self.root.geometry("800x480")
+        self.root.geometry("880x480")
         self.root.resizable(True, True)
         
         self.ser = None
