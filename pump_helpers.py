@@ -18,6 +18,12 @@ def open_comm():
 def close_comm(ser):
     print("Closing serial connection.")
     ser.close()
+    
+def get_pump_status(ser):
+    """Sends a command to the pump to get its status and returns the response."""
+    ser.write(b'STATUS\n')  # Send a command to get status
+    response = ser.readline().decode('utf-8').strip()  # Read the response
+    return response
 
 def read_pump_status(ser):
     # Command: 02 80 32 30 35 30 03 38 37 ("read pump status" according to manual)
