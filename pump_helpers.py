@@ -19,12 +19,6 @@ def open_comm():
 def close_comm(ser):
     print("Closing serial connection.")
     ser.close()
-    
-def get_pump_status(ser):
-    """Sends a command to the pump to get its status and returns the response."""
-    ser.write(b'STATUS\n')  # Send a command to get status
-    response = ser.readline().decode('utf-8').strip()  # Read the response
-    return response
 
 def read_pump_status(ser):
     # Command: 02 80 32 30 35 30 03 38 37 ("read pump status" according to manual)
@@ -60,6 +54,17 @@ def get_pressure_units(ser):
         case '2': return "Torr"
         case _: return "Get units failed."
 
+def get_turbo_speed(ser):
+    # Command: 02 80 32 32 36 30 03 38 35
+    print("Getting turbo speed...")
+    cmd_str = "028032323630033835"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    data = data[6:-6]
+    speed = data.decode('utf-8')
+    return speed
 
 def start_pump(ser):
     # Command: 02 80 30 30 30 31 31 03 42 33
