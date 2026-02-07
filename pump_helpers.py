@@ -20,15 +20,6 @@ def close_comm(ser):
     print("Closing serial connection.")
     ser.close()
 
-def read_pump_status(ser):
-    # Command: 02 80 32 30 35 30 03 38 37 ("read pump status" according to manual)
-    # Command: 02 80 32 32 34 30 03 (for pump pressure)
-    print(ser)
-
-def set_pressure_units(ser, units = "Torr"):
-    # Command: 02 80 31 36 33 (window: 163) 31 (write mode) 00/01/02 (data) 03 CRC
-    print(ser)
-
 def get_pressure_reading(ser):
     # Command: 02 80 32 32 34 (window: 224) 30 (read mode) 03 38 37 (CRC)
     print("Getting pressure reading...")
@@ -66,9 +57,64 @@ def get_turbo_speed(ser):
     speed = data.decode('utf-8')
     return speed
 
+def get_tipseal_life(ser):
+    # Command: 02 80 33 35 38 30 03 38 43 (CRC = 0x8D)
+    print("Getting tip seal life...")
+    cmd_str = "028033353830033843"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    # data = data[6:-6]
+    life = data.decode('utf-8')
+    return life
+
 def start_pump(ser):
     # Command: 02 80 30 30 30 31 31 03 42 33
-    print(ser)
+    print("Starting pump...")
+    cmd_str = "02803030303131034233"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    # Check if the response indicates success
+    if data == b'\x02\x80\x06\x03\x38\x35':
+        success = True
+    else:
+        success = False
+    return success
+
+def stop_pump(ser):
+    # Command: 02 80 30 30 30 31 30 03 42 32
+    print("Stopping pump...")
+    cmd_str = "02803030303130034232"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    # Check if the response indicates success
+    if data == b'\x02\x80\x06\x03\x38\x35':
+        success = True
+    else:
+        success = False
+    return success
+
+def get_pump_status(ser):
+    # Command: 02 80 30 30 30 30 03 38 33
+    print("Getting pump status...")
+    cmd_str = "02803030303030033833"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    # Check if the response indicates success
+    if data[-4:-3] == b'1':
+        status = "Running"
+    elif data[-4:-3] == b'0':
+        status = "Stopped"
+    else:
+        status = "Unknown"
+    return status
 
 def calculate_crc(hex_str):
     # Convert hex string to bytes (handles 2-char chunks automatically)
