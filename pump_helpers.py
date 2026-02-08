@@ -73,6 +73,20 @@ def get_tipseal_life(ser):
     life = life.lstrip('0') or '0'  # Remove leading zeros
     return life
 
+def reset_tipseal_life(ser):
+    # Command: 02 80 33 35 38 30 03 38 43 (CRC = 0x8D)
+    print("Getting tip seal life...")
+    cmd_str = "028033353830033844"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
+    data = data[6:-3]
+    life = data.decode('utf-8')
+    life = life.lstrip('0') or '0'  # Remove leading zeros
+    return life
+
 def start_pump(ser):
     # Command: 02 80 30 30 30 31 31 03 42 33
     print("Starting pump...")
