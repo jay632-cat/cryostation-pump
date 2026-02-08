@@ -53,20 +53,24 @@ def get_turbo_speed(ser):
     print(cmd)
     ser.write(cmd)
     data = ser.read(100)
-    data = data[6:-6]
+    print(data)
+    data = data[6:-3]
     speed = data.decode('utf-8')
+    speed = speed.lstrip('0') or '0'  # Remove leading zeros
     return speed
 
 def get_tipseal_life(ser):
     # Command: 02 80 33 35 38 30 03 38 43 (CRC = 0x8D)
     print("Getting tip seal life...")
-    cmd_str = "028033353830033843"
+    cmd_str = "028033353830033844"
     cmd = bytes.fromhex(cmd_str)
     print(cmd)
     ser.write(cmd)
     data = ser.read(100)
-    # data = data[6:-6]
+    print(data)
+    data = data[6:-3]
     life = data.decode('utf-8')
+    life = life.lstrip('0') or '0'  # Remove leading zeros
     return life
 
 def start_pump(ser):
@@ -129,4 +133,20 @@ def calculate_crc(hex_str):
     return hex(result)
 
 
-# %%
+# %% Test main
+# if __name__ == "__main__":
+#     ser = open_comm()
+#     try:
+#         while True:
+#             if keyboard.is_pressed('q'):
+#                 print("Exiting...")
+#                 break
+#             pressure = get_pressure_reading(ser)
+#             units = get_pressure_units(ser)
+#             speed = get_turbo_speed(ser)
+#             tipseal_life = get_tipseal_life(ser)
+#             status = get_pump_status(ser)
+#             print(f"Pressure: {pressure} {units}, Turbo Speed: {speed} RPM, Tip Seal Life: {tipseal_life}%, Pump Status: {status}")
+#     finally:
+#         close_comm(ser)
+

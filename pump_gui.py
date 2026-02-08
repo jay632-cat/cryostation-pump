@@ -22,7 +22,7 @@ class PumpGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Cryostation Pump Monitor")
-        self.root.geometry("880x480")
+        self.root.state('zoomed')  # Maximize window on startup
         self.root.resizable(True, True)
         
         self.ser = None
@@ -46,10 +46,16 @@ class PumpGUI:
         
         self.setup_ui()
         self.connect_pump()
+        # Handle window close button (X)
+        self.root.protocol("WM_DELETE_WINDOW", self.close_app)
 
         
     def setup_ui(self):
         """Create the user interface"""
+        # Configure ttk style for larger button fonts
+        style = ttk.Style()
+        style.configure('TButton', font=('Arial', 12))
+        
         # Main split: left = controls/display, right = plot
         main_frame = ttk.Frame(self.root)
         main_frame.pack(fill="both", expand=True)
@@ -130,35 +136,35 @@ class PumpGUI:
         
         # Pump start/stop controls (above monitoring buttons)
         pump_control_frame = ttk.Frame(left_frame)
-        pump_control_frame.pack(pady=6, side="bottom", fill="x", padx=10)
+        pump_control_frame.pack(pady=10, side="bottom", fill="both", expand=True, padx=10)
 
         self.start_pump_button = ttk.Button(pump_control_frame, text="Start Pump",
                             command=self.do_start_pump)
-        self.start_pump_button.pack(side="left", padx=5, fill="x", expand=True)
+        self.start_pump_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
 
         self.stop_pump_button = ttk.Button(pump_control_frame, text="Stop Pump",
                            command=self.do_stop_pump)
-        self.stop_pump_button.pack(side="left", padx=5, fill="x", expand=True)
+        self.stop_pump_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
 
         # Control frame (monitoring buttons)
         control_frame = ttk.Frame(left_frame)
-        control_frame.pack(pady=10, side="bottom", fill="x", padx=10)
+        control_frame.pack(pady=10, side="bottom", fill="both", expand=True, padx=10)
         
         self.start_button = ttk.Button(control_frame, text="Start Monitoring", 
                            command=self.start_monitoring)
-        self.start_button.pack(side="left", padx=5, fill="x", expand=True)
+        self.start_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
         
         self.stop_button = ttk.Button(control_frame, text="Stop Monitoring", 
                           command=self.stop_monitoring, state="disabled")
-        self.stop_button.pack(side="left", padx=5, fill="x", expand=True)
+        self.stop_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
         
         close_button = ttk.Button(control_frame, text="Close", 
                       command=self.close_app)
-        close_button.pack(side="left", padx=5, fill="x", expand=True)
+        close_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
         
         save_button = ttk.Button(control_frame, text="Save Plot CSV",
                      command=self.save_plot_csv)
-        save_button.pack(side="left", padx=5, fill="x", expand=True)
+        save_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
         
     def connect_pump(self):
         """Establish serial connection to pump"""
@@ -244,7 +250,7 @@ class PumpGUI:
                 
                 self.pressure_label.config(text=pressure, foreground="blue")
                 self.units_label.config(text=units)
-                self.turbo_label.config(text=f"Turbo: {turbo} Hz")
+                self.turbo_label.config(text=f"Turbo: {turbo} rpm")
                 # read tip seal life from device if available (once per hour)
                 try:
                     now_ts = time.time()
