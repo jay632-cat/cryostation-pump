@@ -80,6 +80,8 @@ Implements the Tkinter GUI and monitoring logic:
   - `stop_monitoring()` – Halts the polling loop
   - `update_pressure()` – Called periodically to fetch and display readings
   - `update_plot()` – Refreshes the matplotlib graph (optional)
+  - `do_start_pump()` – Button callback that sends start command to pump (validates pump is stopped and turbo = 0)
+  - `do_stop_pump()` – Button callback that sends stop command to pump
   - `save_plot_csv()` – Exports pressure history to CSV file
 
 #### Configuration
