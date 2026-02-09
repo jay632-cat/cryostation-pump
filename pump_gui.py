@@ -12,6 +12,7 @@ try:
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     HAS_MPL = True
 except Exception:
@@ -29,14 +30,24 @@ class PumpGUI:
         self.monitoring = False
         self.update_interval = 1000  # milliseconds
         self.plot_interval = 5000  # milliseconds (5 seconds)
-        self.plot_maxlen = 360  # keep ~30 minutes of 5s samples
+        # compute deque sizes so they represent ~24 hours of data
+        # plot samples are taken every `plot_interval`; hr samples every `update_interval`
+        try:
+            self.plot_maxlen = int(24 * 3600 / (self.plot_interval / 1000.0))
+        except Exception:
+            # fallback to 5s-sampled 24h (~17280)
+            self.plot_maxlen = 17280
         self.times = deque(maxlen=self.plot_maxlen)
         self.prices = deque(maxlen=self.plot_maxlen)
         self.turbo_values = deque(maxlen=self.plot_maxlen)
         # high-resolution sample buffers (collected every update_interval)
-        self.hr_times = deque(maxlen=10000)
-        self.hr_pressures = deque(maxlen=10000)
-        self.hr_turbos = deque(maxlen=10000)
+        try:
+            hr_maxlen = int(24 * 3600 / (self.update_interval / 1000.0))
+        except Exception:
+            hr_maxlen = 86400
+        self.hr_times = deque(maxlen=hr_maxlen)
+        self.hr_pressures = deque(maxlen=hr_maxlen)
+        self.hr_turbos = deque(maxlen=hr_maxlen)
         # tip seal sampling: sample interval (seconds) and last sample timestamp
         self.tip_sample_interval = 3600  # 1 hour
         self.tip_last_sample_ts = None
@@ -120,6 +131,13 @@ class PumpGUI:
             self.ax.set_title('Pressure vs Time')
             self.ax.set_xlabel('Time')
             self.ax.set_ylabel('Pressure')
+            # format x-axis as time stamps (hours:minutes)
+            try:
+                self.ax.xaxis_date()
+                self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+                self.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            except Exception:
+                pass
             # use logarithmic scale for pressure axis
             try:
                 self.ax.set_yscale('log')
@@ -425,19 +443,35 @@ class PumpGUI:
                 self.turbo_values.append(None)
 
         if len(self.times) > 0:
-            # convert timestamps to relative seconds for x axis
-            t0 = self.times[0]
-            xs = [t - t0 for t in self.times]
+            # convert timestamps to matplotlib date numbers for x axis
+            try:
+                xs = mdates.date2num([datetime.datetime.fromtimestamp(t) for t in self.times])
+            except Exception:
+                # fallback to relative seconds if date conversion fails
+                t0 = self.times[0]
+                xs = [t - t0 for t in self.times]
             ys = list(self.prices)
             # filter non-positive values for log scale: replace with NaN so matplotlib skips them
             ys_filtered = [v if (v is not None and v > 0) else float('nan') for v in ys]
             # only update plot if there is at least one positive sample
             if not any((v > 0) for v in ys if v is not None):
+                # schedule next plot update before returning so updates continue
+                try:
+                    self.plot_callback = self.root.after(self.plot_interval, self.update_plot)
+                except Exception:
+                    self.plot_callback = None
                 return
             self.line.set_data(xs, ys_filtered)
             self.ax.relim()
             self.ax.autoscale_view()
-            self.ax.set_xlabel('Seconds')
+            self.ax.set_xlabel('Time')
+            try:
+                # rotate labels for readability
+                for label in self.ax.get_xticklabels():
+                    label.set_rotation(30)
+                    label.set_ha('right')
+            except Exception:
+                pass
             self.canvas.draw_idle()
 
         # schedule next plot update
