@@ -334,7 +334,7 @@ class PumpGUI:
 
             is_turbo_zero = (tnum is not None and tnum == 0)
 
-            if is_stopped and is_turbo_zero:
+            if is_turbo_zero:
                 try:
                     if not start_pump(self.ser):
                         raise Exception("Pump did not acknowledge start command")

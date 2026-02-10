@@ -14,6 +14,10 @@ def open_comm():
 
     # Open a serial port
     ser = serial.Serial('COM6', 9600, timeout=1)
+
+    # Set pump into serial mode
+    set_serial(ser)
+
     return ser
 
 def close_comm(ser):
@@ -111,6 +115,32 @@ def stop_pump(ser):
     print(cmd)
     ser.write(cmd)
     data = ser.read(100)
+    print(data)
+    # Check if the response indicates success
+    if data == b'\x02\x80\x06\x03\x38\x35':
+        success = True
+    else:
+        success = False
+
+    # Turn on turbo speed reading after pump stopped
+    # Command: 02 80 31 36 37 31 31 03 
+    cmd_str = "02803136373131034233"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
+    return success
+
+def set_serial(ser):
+    # Command: 02 80 30 30 38 31 30 03 42 41
+    print("Setting serial mode...")
+    cmd_str = "02803030383130034241"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
     # Check if the response indicates success
     if data == b'\x02\x80\x06\x03\x38\x35':
         success = True
@@ -151,17 +181,8 @@ def calculate_crc(hex_str):
 # %% Test main
 # if __name__ == "__main__":
 #     ser = open_comm()
-#     try:
-#         while True:
-#             if keyboard.is_pressed('q'):
-#                 print("Exiting...")
-#                 break
-#             pressure = get_pressure_reading(ser)
-#             units = get_pressure_units(ser)
-#             speed = get_turbo_speed(ser)
-#             tipseal_life = get_tipseal_life(ser)
-#             status = get_pump_status(ser)
-#             print(f"Pressure: {pressure} {units}, Turbo Speed: {speed} RPM, Tip Seal Life: {tipseal_life}%, Pump Status: {status}")
-#     finally:
-#         close_comm(ser)
+#     set_serial(ser)
+#     stop_pump(ser)
+#     print(get_turbo_speed(ser))
+#     close_comm(ser)
 
