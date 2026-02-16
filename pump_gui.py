@@ -51,6 +51,7 @@ class PumpGUI:
         # tip seal sampling: sample interval (seconds) and last sample timestamp
         self.tip_sample_interval = 3600  # 1 hour
         self.tip_last_sample_ts = None
+        self.tip_seal_warning_shown = False
         self.last_pressure_value = None
         self.plot_callback = None
         self.pending_callback = None  # Track pending callbacks
@@ -113,10 +114,17 @@ class PumpGUI:
                                      font=("Arial", 14))
         self.units_label.pack()
 
-        # Turbo pump speed
-        self.turbo_label = ttk.Label(pressure_frame, text="Turbo: -- Hz", 
-                         font=("Arial", 12))
-        self.turbo_label.pack()
+        # Turbo pump speed + status
+        turbo_frame = ttk.Frame(pressure_frame)
+        turbo_frame.pack()
+
+        self.turbo_label = ttk.Label(turbo_frame, text="Turbo: -- rpm", 
+                 font=("Arial", 12))
+        self.turbo_label.pack(side="left")
+
+        self.turbo_status_label = ttk.Label(turbo_frame, text="--",
+                 font=("Arial", 12), foreground="gray")
+        self.turbo_status_label.pack(side="left", padx=(8, 0))
 
         # Tip seal life (hours)
         self.tipseal_label = ttk.Label(pressure_frame, text="Tip Seal Life: -- hr",
@@ -193,9 +201,16 @@ class PumpGUI:
             try:
                 tip_life = get_tipseal_life(self.ser)
                 if tip_life is None:
-                    self.tipseal_label.config(text="Tip Seal Life: -- hr")
+                    self.tipseal_label.config(text="Tip Seal Life: -- hr", foreground="black")
                 else:
                     self.tipseal_label.config(text=f"Tip Seal Life: {tip_life} hr")
+                    if tip_life > 5000:
+                        self.tipseal_label.config(foreground="red")
+                        if not self.tip_seal_warning_shown:
+                            messagebox.showwarning("Tip Seal Warning", "Tip seal life is over 5000 hours. Please change the tip seal.")
+                            self.tip_seal_warning_shown = True
+                    else:
+                        self.tipseal_label.config(foreground="black")
                 self.tip_last_sample_ts = time.time()
             except Exception:
                 # leave label as-is on error
@@ -269,15 +284,31 @@ class PumpGUI:
                 self.pressure_label.config(text=pressure, foreground="blue")
                 self.units_label.config(text=units)
                 self.turbo_label.config(text=f"Turbo: {turbo} rpm")
+                turbo_value = self._parse_pressure_value(turbo)
+                if turbo_value is not None and turbo_value > 70000:
+                    self.turbo_status_label.config(text="At Speed", foreground="green")
+                elif turbo_value is not None and turbo_value == 0:
+                    self.turbo_status_label.config(text="Stopped", foreground="red")
+                elif turbo_value is not None and 0 < turbo_value <= 70000:
+                    self.turbo_status_label.config(text="Starting/Stopping", foreground="goldenrod")
+                else:
+                    self.turbo_status_label.config(text="--", foreground="gray")
                 # read tip seal life from device if available (once per hour)
                 try:
                     now_ts = time.time()
                     if (self.tip_last_sample_ts is None) or (now_ts - self.tip_last_sample_ts >= self.tip_sample_interval):
                         tip_life = get_tipseal_life(self.ser)
                         if tip_life is None:
-                            self.tipseal_label.config(text="Tip Seal Life: -- hr")
+                            self.tipseal_label.config(text="Tip Seal Life: -- hr", foreground="black")
                         else:
                             self.tipseal_label.config(text=f"Tip Seal Life: {tip_life} hr")
+                            if tip_life > 5000:
+                                self.tipseal_label.config(foreground="red")
+                                if not self.tip_seal_warning_shown:
+                                    messagebox.showwarning("Tip Seal Warning", "Tip seal life is over 5000 hours. Please change the tip seal.")
+                                    self.tip_seal_warning_shown = True
+                            else:
+                                self.tipseal_label.config(foreground="black")
                         self.tip_last_sample_ts = now_ts
                 except Exception:
                     # keep previous value on error
@@ -302,6 +333,7 @@ class PumpGUI:
                 self.pressure_label.config(text="Error", foreground="red")
                 self.units_label.config(text=str(e))
                 self.turbo_label.config(text="Turbo: Error")
+                self.turbo_status_label.config(text="--", foreground="red")
                 print(f"Error reading pressure: {e}")
             
             # Schedule next update only if still monitoring
