@@ -196,6 +196,13 @@ class PumpGUI:
         """Establish serial connection to pump"""
         try:
             self.ser = open_comm()
+            units = get_pressure_units(self.ser)
+            units_norm = str(units).strip().lower().rstrip('.')
+            if units_norm == "get units failed":
+                self.status_label.config(text="Disconnected", foreground="red")
+                messagebox.showwarning("Connection Status", "Pump not detected (units read failed).")
+                return
+
             self.status_label.config(text="Connected", foreground="green")
             # sample tip seal life immediately on successful connection
             try:
@@ -277,8 +284,20 @@ class PumpGUI:
         self.pending_callback = None  # Clear callback reference
         if self.monitoring and self.ser:
             try:
-                pressure = get_pressure_reading(self.ser)
                 units = get_pressure_units(self.ser)
+                units_norm = str(units).strip().lower().rstrip('.')
+                if units_norm == "get units failed":
+                    self.status_label.config(text="Disconnected", foreground="red")
+                    self.pressure_label.config(text="--", foreground="red")
+                    self.units_label.config(text="--")
+                    self.turbo_label.config(text="Turbo: -- rpm")
+                    self.turbo_status_label.config(text="--", foreground="gray")
+                    if self.monitoring:
+                        self.pending_callback = self.root.after(self.update_interval, self.update_pressure)
+                    return
+
+                self.status_label.config(text="Connected", foreground="green")
+                pressure = get_pressure_reading(self.ser)
                 turbo = get_turbo_speed(self.ser)
                 
                 self.pressure_label.config(text=pressure, foreground="blue")
