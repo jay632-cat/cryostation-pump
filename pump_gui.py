@@ -149,6 +149,7 @@ class PumpGUI:
             # use logarithmic scale for pressure axis
             try:
                 self.ax.set_yscale('log')
+                self.ax.set_ylim(5e-7, 1e3)
             except Exception:
                 pass
             self.ax.grid(True)
