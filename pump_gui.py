@@ -55,6 +55,9 @@ class PumpGUI:
         self.last_pressure_value = None
         self.plot_callback = None
         self.pending_callback = None  # Track pending callbacks
+        self.start_wait_dialog = None
+        self.start_wait_callback = None
+        self.start_wait_deadline = None
         
         self.setup_ui()
         self.connect_pump()
@@ -165,11 +168,11 @@ class PumpGUI:
         pump_control_frame = ttk.Frame(left_frame)
         pump_control_frame.pack(pady=10, side="bottom", fill="both", expand=True, padx=10)
 
-        self.start_pump_button = ttk.Button(pump_control_frame, text="Start Pump",
+        self.start_pump_button = ttk.Button(pump_control_frame, text="Start Turbo",
                             command=self.do_start_pump)
         self.start_pump_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
 
-        self.stop_pump_button = ttk.Button(pump_control_frame, text="Stop Pump",
+        self.stop_pump_button = ttk.Button(pump_control_frame, text="Stop Turbo",
                            command=self.do_stop_pump)
         self.stop_pump_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
 
@@ -361,20 +364,41 @@ class PumpGUI:
                 self.pending_callback = self.root.after(self.update_interval, self.update_pressure)
 
     def do_start_pump(self):
-        """Send start command to the pump"""
+        """Gate turbo start on pressure < 5e-1 Torr before sending start command."""
         if self.ser is None:
             messagebox.showwarning("Warning", "Pump not connected")
             return
-        # Check pump status via get_pump_status()
+        if self.start_wait_dialog is not None:
+            messagebox.showinfo("Pump Command", "Already waiting for pressure <5e-1 Torr.")
+            return
+        try:
+            pressure = get_pressure_reading(self.ser)
+            pnum = self._parse_pressure_value(pressure)
+        except Exception as e:
+            messagebox.showerror("Pressure Read Error", f"Failed to read pressure:\n{e}")
+            return
+
+        threshold = 5e-1
+        if pnum is not None and pnum < threshold:
+            self._send_start_command()
+            return
+
+        self.start_wait_deadline = time.time() + (10 * 60)
+        self._show_start_wait_dialog()
+        self._poll_pressure_then_start()
+
+    def _send_start_command(self):
+        """Check turbo state and send start command."""
+        if self.ser is None:
+            messagebox.showwarning("Warning", "Pump not connected")
+            return
+        # Check pump status via get_pump_status() for diagnostics
         try:
             try:
                 status = get_pump_status(self.ser)
             except Exception as e:
                 messagebox.showerror("Pump Status Error", f"Failed to read pump status:\n{e}")
                 return
-
-            sstr = '' if status is None else str(status).lower()
-            is_stopped = 'stopped' in sstr or sstr.strip() == 'stopped'
 
             # Check turbo speed equals 0
             try:
@@ -399,6 +423,87 @@ class PumpGUI:
         except Exception as e:
             messagebox.showerror("Pump Error", f"Unexpected error:\n{e}")
 
+    def _show_start_wait_dialog(self):
+        """Show modal dialog while waiting for pressure to reach safe turbo-start threshold."""
+        if self.start_wait_dialog is not None:
+            return
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Waiting for Pressure")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        msg = ttk.Label(dlg, text="Waiting for pressure <5e-1 Torr for 10 min...", padding=16)
+        msg.pack()
+
+        # Center dialog over root window.
+        try:
+            self.root.update_idletasks()
+            rw = self.root.winfo_width()
+            rh = self.root.winfo_height()
+            rx = self.root.winfo_rootx()
+            ry = self.root.winfo_rooty()
+            ww = dlg.winfo_reqwidth()
+            wh = dlg.winfo_reqheight()
+            x = rx + max((rw - ww) // 2, 0)
+            y = ry + max((rh - wh) // 2, 0)
+            dlg.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+
+        self.start_wait_dialog = dlg
+
+    def _close_start_wait_dialog(self):
+        """Close waiting dialog and clear pending polling callback."""
+        if self.start_wait_callback:
+            try:
+                self.root.after_cancel(self.start_wait_callback)
+            except Exception:
+                pass
+        self.start_wait_callback = None
+        self.start_wait_deadline = None
+
+        if self.start_wait_dialog is not None:
+            try:
+                self.start_wait_dialog.grab_release()
+            except Exception:
+                pass
+            try:
+                self.start_wait_dialog.destroy()
+            except Exception:
+                pass
+        self.start_wait_dialog = None
+
+    def _poll_pressure_then_start(self):
+        """Poll pressure until threshold is met or timeout occurs."""
+        if self.ser is None:
+            self._close_start_wait_dialog()
+            messagebox.showerror("Pump Error", "Pump disconnected while waiting to start turbo")
+            return
+
+        threshold = 5e-1
+        try:
+            pressure = get_pressure_reading(self.ser)
+            pnum = self._parse_pressure_value(pressure)
+        except Exception as e:
+            self._close_start_wait_dialog()
+            messagebox.showerror("Pressure Read Error", f"Failed to read pressure:\n{e}")
+            return
+
+        if pnum is not None and pnum < threshold:
+            self._close_start_wait_dialog()
+            self._send_start_command()
+            return
+
+        if self.start_wait_deadline is not None and time.time() >= self.start_wait_deadline:
+            self._close_start_wait_dialog()
+            messagebox.showerror("Pump Error", "Pressure did not reach <5e-1 Torr within 10 min. Start command not sent.")
+            return
+
+        self.start_wait_callback = self.root.after(1000, self._poll_pressure_then_start)
+
     def do_stop_pump(self):
         """Send stop command to the pump"""
         if self.ser is None:
@@ -413,6 +518,7 @@ class PumpGUI:
     def close_app(self):
         """Close the application"""
         self.stop_monitoring()
+        self._close_start_wait_dialog()
         # Cancel any pending callbacks
         if self.pending_callback:
             self.root.after_cancel(self.pending_callback)
