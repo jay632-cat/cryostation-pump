@@ -56,8 +56,10 @@ class PumpGUI:
         self.plot_callback = None
         self.pending_callback = None  # Track pending callbacks
         self.start_wait_dialog = None
+        self.start_wait_label = None
         self.start_wait_callback = None
         self.start_wait_deadline = None
+        self.live_pressure_value = None
         
         self.setup_ui()
         self.connect_pump()
@@ -282,11 +284,24 @@ class PumpGUI:
             except Exception:
                 pass
             self.plot_callback = None
+
+    def _is_live_updating(self):
+        """Return True when pressure/plot loops should keep running."""
+        return self.monitoring or (self.start_wait_dialog is not None)
+
+    def _ensure_live_updates(self):
+        """Start update loops if needed (used for turbo-start wait mode)."""
+        if self.ser is None:
+            return
+        if self.pending_callback is None:
+            self.update_pressure()
+        if HAS_MPL and self.plot_callback is None:
+            self.update_plot()
         
     def update_pressure(self):
         """Update pressure reading from pump"""
         self.pending_callback = None  # Clear callback reference
-        if self.monitoring and self.ser:
+        if self._is_live_updating() and self.ser:
             try:
                 units = get_pressure_units(self.ser)
                 units_norm = str(units).strip().lower().rstrip('.')
@@ -340,6 +355,9 @@ class PumpGUI:
                 num = self._parse_pressure_value(pressure)
                 if num is not None:
                     self.last_pressure_value = num
+                    self.live_pressure_value = num
+                    if self.start_wait_dialog is not None:
+                        self._update_start_wait_message(num)
                     # record high-resolution sample
                     ts = time.time()
                     self.hr_times.append(ts)
@@ -360,7 +378,7 @@ class PumpGUI:
                 print(f"Error reading pressure: {e}")
             
             # Schedule next update only if still monitoring
-            if self.monitoring:
+            if self._is_live_updating():
                 self.pending_callback = self.root.after(self.update_interval, self.update_pressure)
 
     def do_start_pump(self):
@@ -385,6 +403,7 @@ class PumpGUI:
 
         self.start_wait_deadline = time.time() + (10 * 60)
         self._show_start_wait_dialog()
+        self._ensure_live_updates()
         self._poll_pressure_then_start()
 
     def _send_start_command(self):
@@ -435,8 +454,8 @@ class PumpGUI:
         dlg.resizable(False, False)
         dlg.protocol("WM_DELETE_WINDOW", lambda: None)
 
-        msg = ttk.Label(dlg, text="Waiting for pressure <5e-1 Torr for 10 min...", padding=16)
-        msg.pack()
+        self.start_wait_label = ttk.Label(dlg, text="Waiting for pressure <5e-1 Torr for 10 min...", padding=16)
+        self.start_wait_label.pack()
 
         # Center dialog over root window.
         try:
@@ -454,6 +473,32 @@ class PumpGUI:
             pass
 
         self.start_wait_dialog = dlg
+        self._update_start_wait_message(self.live_pressure_value)
+
+    def _update_start_wait_message(self, pressure_value=None):
+        """Refresh waiting-dialog text with latest pressure and remaining time."""
+        if self.start_wait_label is None:
+            return
+
+        remaining_text = "--"
+        if self.start_wait_deadline is not None:
+            remaining = max(int(self.start_wait_deadline - time.time()), 0)
+            mins = remaining // 60
+            secs = remaining % 60
+            remaining_text = f"{mins:02d}:{secs:02d}"
+
+        if pressure_value is None:
+            pressure_text = "--"
+        else:
+            pressure_text = f"{pressure_value:.3e}"
+
+        self.start_wait_label.config(
+            text=(
+                "Waiting for pressure <5e-1 Torr before turbo start\n"
+                f"Current pressure: {pressure_text} Torr\n"
+                f"Time remaining: {remaining_text}"
+            )
+        )
 
     def _close_start_wait_dialog(self):
         """Close waiting dialog and clear pending polling callback."""
@@ -475,6 +520,7 @@ class PumpGUI:
             except Exception:
                 pass
         self.start_wait_dialog = None
+        self.start_wait_label = None
 
     def _poll_pressure_then_start(self):
         """Poll pressure until threshold is met or timeout occurs."""
@@ -484,13 +530,19 @@ class PumpGUI:
             return
 
         threshold = 5e-1
-        try:
-            pressure = get_pressure_reading(self.ser)
-            pnum = self._parse_pressure_value(pressure)
-        except Exception as e:
-            self._close_start_wait_dialog()
-            messagebox.showerror("Pressure Read Error", f"Failed to read pressure:\n{e}")
-            return
+        pnum = self.live_pressure_value
+        if pnum is None:
+            try:
+                pressure = get_pressure_reading(self.ser)
+                pnum = self._parse_pressure_value(pressure)
+                if pnum is not None:
+                    self.live_pressure_value = pnum
+            except Exception as e:
+                self._close_start_wait_dialog()
+                messagebox.showerror("Pressure Read Error", f"Failed to read pressure:\n{e}")
+                return
+
+        self._update_start_wait_message(pnum)
 
         if pnum is not None and pnum < threshold:
             self._close_start_wait_dialog()
@@ -577,6 +629,9 @@ class PumpGUI:
     def update_plot(self):
         """Sample current pressure and update the matplotlib plot."""
         if not HAS_MPL:
+            return
+        if not self._is_live_updating():
+            self.plot_callback = None
             return
         # aggregate high-resolution samples from the last plot interval
         now = time.time()
