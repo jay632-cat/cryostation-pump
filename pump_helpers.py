@@ -63,6 +63,34 @@ def get_turbo_speed(ser):
     speed = speed.lstrip('0') or '0'  # Remove leading zeros
     return speed
 
+def get_turbo_voltage(ser):
+    # Command: 02 80 32 30 30 30 03 38 35
+    print("Getting turbo voltage...")
+    cmd_str =  "028032303130033830"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
+    data = data[6:-3]
+    voltage = data.decode('utf-8')
+    voltage = voltage.lstrip('0') or '0'  # Remove leading zeros
+    return voltage
+
+def get_turbo_current(ser):
+    # Command: 02 80 32 30 31 30 03 38 35
+    print("Getting turbo current...")
+    cmd_str = "028032303030033831"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
+    data = data[6:-3]
+    current = data.decode('utf-8')
+    current = current.lstrip('0') or '0'  # Remove leading zeros
+    return current
+
 def get_tipseal_life(ser):
     # Command: 02 80 33 35 38 30 03 38 43 (CRC = 0x8D)
     print("Getting tip seal life...")
@@ -179,10 +207,12 @@ def calculate_crc(hex_str):
 
 
 # %% Test main
-# if __name__ == "__main__":
-#     ser = open_comm()
-#     set_serial(ser)
-#     stop_pump(ser)
-#     print(get_turbo_speed(ser))
-#     close_comm(ser)
+if __name__ == "__main__":
+    ser = open_comm()
+    set_serial(ser)
+    start_pump(ser)
+    print(get_turbo_speed(ser))
+    print(get_turbo_voltage(ser))
+    print(get_turbo_current(ser))
+    close_comm(ser)
 
