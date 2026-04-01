@@ -91,6 +91,20 @@ def get_turbo_current(ser):
     current = current.lstrip('0') or '0'  # Remove leading zeros
     return current
 
+def get_turbo_power(ser):
+    # Command: 02 80 32 30 32 30 03 38 33
+    print("Getting turbo power...")
+    cmd_str = "028032303230033833"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
+    data = data[6:-3]
+    power = data.decode('utf-8')
+    power = power.lstrip('0') or '0'  # Remove leading zeros
+    return power
+
 def get_tipseal_life(ser):
     # Command: 02 80 33 35 38 30 03 38 43 (CRC = 0x8D)
     print("Getting tip seal life...")
@@ -214,5 +228,6 @@ if __name__ == "__main__":
     print(get_turbo_speed(ser))
     print(get_turbo_voltage(ser))
     print(get_turbo_current(ser))
+    print(get_turbo_power(ser))
     close_comm(ser)
 

@@ -7,7 +7,7 @@ import csv
 import datetime
 from collections import deque
 from tkinter import filedialog
-from pump_helpers import open_comm, close_comm, get_pressure_reading, get_pressure_units, get_turbo_speed, start_pump, stop_pump, get_tipseal_life, get_pump_status
+from pump_helpers import open_comm, close_comm, get_pressure_reading, get_pressure_units, get_turbo_speed, get_turbo_power, get_turbo_current, get_turbo_voltage, start_pump, stop_pump, get_tipseal_life, get_pump_status
 try:
     import matplotlib
     matplotlib.use('Agg')
@@ -131,6 +131,18 @@ class PumpGUI:
                  font=("Arial", 12), foreground="gray")
         self.turbo_status_label.pack(side="left", padx=(8, 0))
 
+        self.power_label = ttk.Label(pressure_frame, text="Power: -- W",
+                   font=("Arial", 12))
+        self.power_label.pack()
+
+        self.current_label = ttk.Label(pressure_frame, text="Current: -- mA",
+                     font=("Arial", 12))
+        self.current_label.pack()
+
+        self.voltage_label = ttk.Label(pressure_frame, text="Voltage: -- V",
+                     font=("Arial", 12))
+        self.voltage_label.pack()
+
         # Tip seal life (hours)
         self.tipseal_label = ttk.Label(pressure_frame, text="Tip Seal Life: -- hr",
                            font=("Arial", 12))
@@ -154,7 +166,7 @@ class PumpGUI:
             # use logarithmic scale for pressure axis
             try:
                 self.ax.set_yscale('log')
-                self.ax.set_ylim(5e-7, 1e3)
+                self.ax.set_ylim(2e-7, 1e3)
             except Exception:
                 pass
             self.ax.grid(True)
@@ -311,6 +323,9 @@ class PumpGUI:
                     self.units_label.config(text="--")
                     self.turbo_label.config(text="Turbo: -- rpm")
                     self.turbo_status_label.config(text="--", foreground="gray")
+                    self.power_label.config(text="Power: -- W")
+                    self.current_label.config(text="Current: -- mA")
+                    self.voltage_label.config(text="Voltage: -- V")
                     if self.monitoring:
                         self.pending_callback = self.root.after(self.update_interval, self.update_pressure)
                     return
@@ -318,10 +333,16 @@ class PumpGUI:
                 self.status_label.config(text="Connected", foreground="green")
                 pressure = get_pressure_reading(self.ser)
                 turbo = get_turbo_speed(self.ser)
+                power = get_turbo_power(self.ser)
+                current = get_turbo_current(self.ser)
+                voltage = get_turbo_voltage(self.ser)
                 
                 self.pressure_label.config(text=pressure, foreground="blue")
                 self.units_label.config(text=units)
                 self.turbo_label.config(text=f"Turbo: {turbo} rpm")
+                self.power_label.config(text=f"Power: {power} W")
+                self.current_label.config(text=f"Current: {current} mA")
+                self.voltage_label.config(text=f"Voltage: {voltage} V")
                 turbo_value = self._parse_pressure_value(turbo)
                 if turbo_value is not None and turbo_value > 70000:
                     self.turbo_status_label.config(text="At Speed", foreground="green")
@@ -374,6 +395,9 @@ class PumpGUI:
                 self.pressure_label.config(text="Error", foreground="red")
                 self.units_label.config(text=str(e))
                 self.turbo_label.config(text="Turbo: Error")
+                self.power_label.config(text="Power: Error")
+                self.current_label.config(text="Current: Error")
+                self.voltage_label.config(text="Voltage: Error")
                 self.turbo_status_label.config(text="--", foreground="red")
                 print(f"Error reading pressure: {e}")
             
