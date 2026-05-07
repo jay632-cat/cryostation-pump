@@ -8,6 +8,7 @@ import datetime
 from collections import deque
 from tkinter import filedialog
 from pump_helpers import open_comm, close_comm, get_pressure_reading, get_pressure_units, get_turbo_speed, get_turbo_power, get_turbo_current, get_turbo_voltage, start_pump, stop_pump, get_tipseal_life, get_pump_status
+import queue
 try:
     import matplotlib
     matplotlib.use('Agg')
@@ -19,14 +20,80 @@ except Exception:
     HAS_MPL = False
 
 
+class PumpReader(threading.Thread):
+    def __init__(self, ser, serial_lock):
+        super().__init__(daemon=True)
+        self.ser = ser
+        self.serial_lock = serial_lock
+        self.running = True
+        self.lock = threading.Lock()
+        self.data = {
+            'pressure': None,
+            'units': None,
+            'turbo': None,
+            'power': None,
+            'current': None,
+            'voltage': None,
+            'tip_life': None,
+            'timestamp': None,
+            'error': None,
+        }
+        self.tip_last_sample_ts = None
+        self.tip_sample_interval = 3600
+
+    def run(self):
+        while self.running:
+            try:
+                with self.serial_lock:
+                    units = get_pressure_units(self.ser)
+                    pressure = get_pressure_reading(self.ser)
+                    turbo = get_turbo_speed(self.ser)
+                    power = get_turbo_power(self.ser)
+                    current = get_turbo_current(self.ser)
+                    voltage = get_turbo_voltage(self.ser)
+
+                    now_ts = time.time()
+                    if (self.tip_last_sample_ts is None) or (now_ts - self.tip_last_sample_ts >= self.tip_sample_interval):
+                        tip_life = get_tipseal_life(self.ser)
+                        self.tip_last_sample_ts = now_ts
+                    else:
+                        tip_life = self.data.get('tip_life')
+
+                with self.lock:
+                    self.data['error'] = None
+                    self.data['timestamp'] = time.time()
+                    self.data['units'] = units
+                    self.data['pressure'] = pressure
+                    self.data['turbo'] = turbo
+                    self.data['power'] = power
+                    self.data['current'] = current
+                    self.data['voltage'] = voltage
+                    self.data['tip_life'] = tip_life
+
+            except Exception as e:
+                with self.lock:
+                    self.data['error'] = str(e)
+
+            time.sleep(0.5)
+
+    def get_data(self):
+        with self.lock:
+            return dict(self.data)
+
+    def stop(self):
+        self.running = False
+
+
 class PumpGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Cryostation Pump Monitor")
         self.root.state('zoomed')  # Maximize window on startup
         self.root.resizable(True, True)
-        
+
         self.ser = None
+        self.serial_lock = threading.Lock()
+        self.pump_reader = None
         self.monitoring = False
         self.update_interval = 1000  # milliseconds
         self.plot_interval = 5000  # milliseconds (5 seconds)
@@ -63,7 +130,7 @@ class PumpGUI:
         
         self.setup_ui()
         self.connect_pump()
-        # Handle window close button (X)
+        self.root.after(2000, self._initial_display_update)
         self.root.protocol("WM_DELETE_WINDOW", self.close_app)
 
         
@@ -172,6 +239,7 @@ class PumpGUI:
             self.ax.grid(True)
 
             self.canvas = FigureCanvasTkAgg(self.fig, master=right_frame)
+            
             self.canvas_widget = self.canvas.get_tk_widget()
             self.canvas_widget.pack(fill='both', expand=True)
         else:
@@ -222,28 +290,34 @@ class PumpGUI:
                 return
 
             self.status_label.config(text="Connected", foreground="green")
-            # sample tip seal life immediately on successful connection
+
+            self.pump_reader = PumpReader(self.ser, self.serial_lock)
+            self.pump_reader.start()
+
+            time.sleep(1.5)
+        except Exception as e:
+            messagebox.showerror("Connection Error", f"Failed to connect to pump:\n{str(e)}")
+            self.status_label.config(text="Connection Failed", foreground="red")
+
+    def _initial_display_update(self):
+        """Update UI with initial data from background thread"""
+        if self.pump_reader and self.ser:
             try:
-                tip_life = get_tipseal_life(self.ser)
-                if tip_life is None:
-                    self.tipseal_label.config(text="Tip Seal Life: -- hr", foreground="black")
-                else:
+                data = self.pump_reader.get_data()
+                tip_life = data.get('tip_life')
+                if tip_life is not None:
+                    tip_value = self._parse_pressure_value(tip_life)
                     self.tipseal_label.config(text=f"Tip Seal Life: {tip_life} hr")
-                    if tip_life > 5000:
+                    if tip_value is not None and tip_value > 5000:
                         self.tipseal_label.config(foreground="red")
                         if not self.tip_seal_warning_shown:
                             messagebox.showwarning("Tip Seal Warning", "Tip seal life is over 5000 hours. Please change the tip seal.")
                             self.tip_seal_warning_shown = True
                     else:
                         self.tipseal_label.config(foreground="black")
-                self.tip_last_sample_ts = time.time()
             except Exception:
-                # leave label as-is on error
                 pass
-        except Exception as e:
-            messagebox.showerror("Connection Error", f"Failed to connect to pump:\n{str(e)}")
-            self.status_label.config(text="Connection Failed", foreground="red")
-            
+
     def start_monitoring(self):
         """Start continuous pressure monitoring"""
         if self.ser is None:
@@ -311,12 +385,28 @@ class PumpGUI:
             self.update_plot()
         
     def update_pressure(self):
-        """Update pressure reading from pump"""
-        self.pending_callback = None  # Clear callback reference
-        if self._is_live_updating() and self.ser:
+        """Update pressure reading from pump (non-blocking via background thread)"""
+        self.pending_callback = None
+        if self._is_live_updating() and self.ser and self.pump_reader:
             try:
-                units = get_pressure_units(self.ser)
-                units_norm = str(units).strip().lower().rstrip('.')
+                data = self.pump_reader.get_data()
+
+                if data.get('error'):
+                    self.status_label.config(text="Disconnected", foreground="red")
+                    self.pressure_label.config(text="--", foreground="red")
+                    self.units_label.config(text="--")
+                    self.turbo_label.config(text="Turbo: -- rpm")
+                    self.turbo_status_label.config(text="--", foreground="gray")
+                    self.power_label.config(text="Power: -- W")
+                    self.current_label.config(text="Current: -- mA")
+                    self.voltage_label.config(text="Voltage: -- V")
+                    if self.monitoring:
+                        self.pending_callback = self.root.after(self.update_interval, self.update_pressure)
+                    return
+
+                units = data.get('units')
+                units_norm = str(units).strip().lower().rstrip('.') if units else ""
+
                 if units_norm == "get units failed":
                     self.status_label.config(text="Disconnected", foreground="red")
                     self.pressure_label.config(text="--", foreground="red")
@@ -331,18 +421,21 @@ class PumpGUI:
                     return
 
                 self.status_label.config(text="Connected", foreground="green")
-                pressure = get_pressure_reading(self.ser)
-                turbo = get_turbo_speed(self.ser)
-                power = get_turbo_power(self.ser)
-                current = get_turbo_current(self.ser)
-                voltage = get_turbo_voltage(self.ser)
-                
+
+                pressure = data.get('pressure')
+                turbo = data.get('turbo')
+                power = data.get('power')
+                current = data.get('current')
+                voltage = data.get('voltage')
+                tip_life = data.get('tip_life')
+
                 self.pressure_label.config(text=pressure, foreground="blue")
                 self.units_label.config(text=units)
                 self.turbo_label.config(text=f"Turbo: {turbo} rpm")
                 self.power_label.config(text=f"Power: {power} W")
                 self.current_label.config(text=f"Current: {current} mA")
                 self.voltage_label.config(text=f"Voltage: {voltage} V")
+
                 turbo_value = self._parse_pressure_value(turbo)
                 if turbo_value is not None and turbo_value > 70000:
                     self.turbo_status_label.config(text="At Speed", foreground="green")
@@ -352,45 +445,33 @@ class PumpGUI:
                     self.turbo_status_label.config(text="Starting/Stopping", foreground="goldenrod")
                 else:
                     self.turbo_status_label.config(text="--", foreground="gray")
-                # read tip seal life from device if available (once per hour)
-                try:
-                    now_ts = time.time()
-                    if (self.tip_last_sample_ts is None) or (now_ts - self.tip_last_sample_ts >= self.tip_sample_interval):
-                        tip_life = get_tipseal_life(self.ser)
-                        if tip_life is None:
-                            self.tipseal_label.config(text="Tip Seal Life: -- hr", foreground="black")
-                        else:
-                            self.tipseal_label.config(text=f"Tip Seal Life: {tip_life} hr")
-                            if tip_life > 5000:
-                                self.tipseal_label.config(foreground="red")
-                                if not self.tip_seal_warning_shown:
-                                    messagebox.showwarning("Tip Seal Warning", "Tip seal life is over 5000 hours. Please change the tip seal.")
-                                    self.tip_seal_warning_shown = True
-                            else:
-                                self.tipseal_label.config(foreground="black")
-                        self.tip_last_sample_ts = now_ts
-                except Exception:
-                    # keep previous value on error
-                    pass
-                # parse numeric pressure for plotting
+
+                if tip_life is not None:
+                    self.tipseal_label.config(text=f"Tip Seal Life: {tip_life} hr")
+                    tip_value = self._parse_pressure_value(tip_life)
+                    if tip_value is not None and tip_value > 5000:
+                        self.tipseal_label.config(foreground="red")
+                        if not self.tip_seal_warning_shown:
+                            messagebox.showwarning("Tip Seal Warning", "Tip seal life is over 5000 hours. Please change the tip seal.")
+                            self.tip_seal_warning_shown = True
+                    else:
+                        self.tipseal_label.config(foreground="black")
+
                 num = self._parse_pressure_value(pressure)
                 if num is not None:
                     self.last_pressure_value = num
                     self.live_pressure_value = num
                     if self.start_wait_dialog is not None:
                         self._update_start_wait_message(num)
-                    # record high-resolution sample
                     ts = time.time()
                     self.hr_times.append(ts)
                     self.hr_pressures.append(num)
-                    # parse turbo numeric if possible
                     tnum = self._parse_pressure_value(turbo)
-                    # always append to hr_turbos to keep buffers aligned (use None if missing)
                     if tnum is not None:
                         self.hr_turbos.append(tnum)
                     else:
                         self.hr_turbos.append(None)
-                
+
             except Exception as e:
                 self.pressure_label.config(text="Error", foreground="red")
                 self.units_label.config(text=str(e))
@@ -400,8 +481,7 @@ class PumpGUI:
                 self.voltage_label.config(text="Voltage: Error")
                 self.turbo_status_label.config(text="--", foreground="red")
                 print(f"Error reading pressure: {e}")
-            
-            # Schedule next update only if still monitoring
+
             if self._is_live_updating():
                 self.pending_callback = self.root.after(self.update_interval, self.update_pressure)
 
@@ -414,7 +494,12 @@ class PumpGUI:
             messagebox.showinfo("Pump Command", "Already waiting for pressure <5e-1 Torr.")
             return
         try:
-            pressure = get_pressure_reading(self.ser)
+            if self.pump_reader:
+                data = self.pump_reader.get_data()
+                pressure = data.get('pressure')
+            else:
+                with self.serial_lock:
+                    pressure = get_pressure_reading(self.ser)
             pnum = self._parse_pressure_value(pressure)
         except Exception as e:
             messagebox.showerror("Pressure Read Error", f"Failed to read pressure:\n{e}")
@@ -437,26 +522,28 @@ class PumpGUI:
             return
         # Check pump status via get_pump_status() for diagnostics
         try:
-            try:
-                status = get_pump_status(self.ser)
-            except Exception as e:
-                messagebox.showerror("Pump Status Error", f"Failed to read pump status:\n{e}")
-                return
+            with self.serial_lock:
+                try:
+                    status = get_pump_status(self.ser)
+                except Exception as e:
+                    messagebox.showerror("Pump Status Error", f"Failed to read pump status:\n{e}")
+                    return
 
-            # Check turbo speed equals 0
-            try:
-                turbo = get_turbo_speed(self.ser)
-                tnum = self._parse_pressure_value(turbo)
-            except Exception as e:
-                messagebox.showerror("Turbo Read Error", f"Failed to read turbo speed:\n{e}")
-                return
+                # Check turbo speed equals 0
+                try:
+                    turbo = get_turbo_speed(self.ser)
+                    tnum = self._parse_pressure_value(turbo)
+                except Exception as e:
+                    messagebox.showerror("Turbo Read Error", f"Failed to read turbo speed:\n{e}")
+                    return
 
             is_turbo_zero = (tnum is not None and tnum == 0)
 
             if is_turbo_zero:
                 try:
-                    if not start_pump(self.ser):
-                        raise Exception("Pump did not acknowledge start command")
+                    with self.serial_lock:
+                        if not start_pump(self.ser):
+                            raise Exception("Pump did not acknowledge start command")
                     messagebox.showinfo("Pump Command", "Start command sent")
                 except Exception as e:
                     messagebox.showerror("Pump Error", f"Failed to send start command:\n{e}")
@@ -557,7 +644,11 @@ class PumpGUI:
         pnum = self.live_pressure_value
         if pnum is None:
             try:
-                pressure = get_pressure_reading(self.ser)
+                if self.pump_reader:
+                    data = self.pump_reader.get_data()
+                    pressure = data.get('pressure')
+                else:
+                    pressure = get_pressure_reading(self.ser)
                 pnum = self._parse_pressure_value(pressure)
                 if pnum is not None:
                     self.live_pressure_value = pnum
@@ -586,7 +677,8 @@ class PumpGUI:
             messagebox.showwarning("Warning", "Pump not connected")
             return
         try:
-            stop_pump(self.ser)
+            with self.serial_lock:
+                stop_pump(self.ser)
             messagebox.showinfo("Pump Command", "Stop command sent")
         except Exception as e:
             messagebox.showerror("Pump Error", f"Failed to send stop command:\n{e}")
@@ -595,7 +687,6 @@ class PumpGUI:
         """Close the application"""
         self.stop_monitoring()
         self._close_start_wait_dialog()
-        # Cancel any pending callbacks
         if self.pending_callback:
             self.root.after_cancel(self.pending_callback)
         if self.plot_callback:
@@ -603,6 +694,9 @@ class PumpGUI:
                 self.root.after_cancel(self.plot_callback)
             except Exception:
                 pass
+        if self.pump_reader:
+            self.pump_reader.stop()
+            self.pump_reader.join(timeout=2)
         if self.ser:
             try:
                 close_comm(self.ser)
