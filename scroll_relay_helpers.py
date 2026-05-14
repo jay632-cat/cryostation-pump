@@ -16,12 +16,51 @@
 '''Prerequisites : Python 3.x , install serial module using pip'''
 
 import serial
+
+def init_relay_comm(port_name, baud_rate=19200, timeout=1):
+    try:
+        print(f"Opening serial port {port_name} with baud rate {baud_rate} and timeout {timeout}.")
+        ser = serial.Serial(port_name, baud_rate, timeout=timeout)
+        print("Serial port opened successfully.")
+        return ser  
+    except serial.SerialException as e:
+        print(f"Error opening serial port: {e}")
+        return None
+
+def close_relay_comm(ser):
+    print("Closing serial connection.")
+    ser.close()
  
 def send_command(ser_port, command):
     """Send command to the serial port and read the response."""
     ser_port.write(command.encode())
     response = ser_port.read(25).decode()
     return response
+
+def turn_on_relay(ser_port, relay_number):
+    if isinstance(relay_number, int) and 0 <= relay_number <= 1:
+        relay_on_command = f"relay on {relay_number}\r"
+        send_command(ser_port, relay_on_command)
+        print(f"Relay {relay_number} ON successfully.")
+    else:
+        print("Error: relay_number must be one of the digits between 0 and 1.")
+
+def turn_off_relay(ser_port, relay_number):
+    if isinstance(relay_number, int) and 0 <= relay_number <= 1:
+        relay_off_command = f"relay off {relay_number}\r"
+        send_command(ser_port, relay_off_command)
+        print(f"Relay {relay_number} OFF successfully.")
+    else:
+        print("Error: relay_number must be one of the digits between 0 and 1.")
+
+def read_relay_state(ser_port, relay_number):
+    if isinstance(relay_number, int) and 0 <= relay_number <= 1:
+        relay_read_command = f"relay read {relay_number}\r"
+        relay_response = send_command(ser_port, relay_read_command)
+        relay_state = relay_response[-5:-3]
+        print(f"Relay {relay_number} state is: {relay_state}")
+    else:
+        print("Error: relay_number must be one of the digits between 0 and 1.")
  
 def main():
     port_name = "COM1"  # Replace with your actual COM port
@@ -66,5 +105,3 @@ def main():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
  
-if __name__ == "__main__":
-    main()

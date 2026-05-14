@@ -18,6 +18,15 @@ def open_comm():
     # Set pump into serial mode
     set_serial(ser)
 
+    # Turn on turbo speed reading after pump stopped
+    # Command: 02 80 31 36 37 31 31 03 
+    cmd_str = "02803136373131034233"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
+
     return ser
 
 def close_comm(ser):
