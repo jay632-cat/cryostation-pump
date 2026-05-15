@@ -12,6 +12,7 @@
 #application.
  
 #This demo code demonstrates how to turn ON, OFF, read a relay, set, clear, read a GPIO and read an analog channel.
+#Used with Numato Lab's 1 Channel USB Powered Relay Module, DPDT relay (SKU: USBPOWRL002)
 
 '''Prerequisites : Python 3.x , install serial module using pip'''
 
@@ -59,8 +60,10 @@ def read_relay_state(ser_port, relay_number):
         relay_response = send_command(ser_port, relay_read_command)
         relay_state = relay_response[-5:-3]
         print(f"Relay {relay_number} state is: {relay_state}")
+        return relay_state
     else:
         print("Error: relay_number must be one of the digits between 0 and 1.")
+        return None
  
 def main():
     port_name = "COM1"  # Replace with your actual COM port

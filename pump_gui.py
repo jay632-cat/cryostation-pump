@@ -8,6 +8,14 @@ import datetime
 from collections import deque
 from tkinter import filedialog
 from pump_helpers import open_comm, close_comm, get_pressure_reading, get_pressure_units, get_turbo_speed, get_turbo_power, get_turbo_current, get_turbo_voltage, start_pump, stop_pump, get_tipseal_life, get_pump_status
+from scroll_relay_helpers import (
+    init_relay_comm,
+    close_relay_comm,
+    send_command as send_relay_command,
+    turn_on_relay,
+    turn_off_relay,
+    read_relay_state
+)
 import queue
 try:
     import matplotlib
@@ -92,7 +100,9 @@ class PumpGUI:
         self.root.resizable(True, True)
 
         self.ser = None
+        self.relay_ser = None
         self.serial_lock = threading.Lock()
+        self.relay_lock = threading.Lock()
         self.pump_reader = None
         self.monitoring = False
         self.update_interval = 1000  # milliseconds
@@ -127,6 +137,7 @@ class PumpGUI:
         self.start_wait_callback = None
         self.start_wait_deadline = None
         self.live_pressure_value = None
+        self.turbo_start_time = None  # Track when turbo was last started
         
         self.setup_ui()
         self.connect_pump()
@@ -168,9 +179,25 @@ class PumpGUI:
         status_frame = ttk.LabelFrame(left_frame, text="Connection Status", padding=10)
         status_frame.pack(padx=10, pady=10, fill="x")
 
-        self.status_label = ttk.Label(status_frame, text="Disconnected", 
+        # Container frame to center the status displays
+        status_container = ttk.Frame(status_frame)
+        status_container.pack(expand=True)
+
+        # Turbo pump status
+        turbo_status_frame = ttk.Frame(status_container)
+        turbo_status_frame.pack(side="left", pady=5, padx=(0, 20))
+        ttk.Label(turbo_status_frame, text="Turbo Pump:").pack(side="left")
+        self.status_label = ttk.Label(turbo_status_frame, text="Disconnected",
                                       foreground="red", font=("Arial", 10))
-        self.status_label.pack()
+        self.status_label.pack(side="left", padx=(10, 0))
+
+        # Scroll relay status
+        relay_status_frame = ttk.Frame(status_container)
+        relay_status_frame.pack(side="left", pady=5)
+        ttk.Label(relay_status_frame, text="Scroll Relay:").pack(side="left")
+        self.relay_status_label = ttk.Label(relay_status_frame, text="Disconnected",
+                                           foreground="red", font=("Arial", 10))
+        self.relay_status_label.pack(side="left", padx=(10, 0))
 
         # Pressure display frame
         pressure_frame = ttk.LabelFrame(left_frame, text="Pressure Reading", padding=20)
@@ -250,11 +277,11 @@ class PumpGUI:
         pump_control_frame = ttk.Frame(left_frame)
         pump_control_frame.pack(pady=10, side="bottom", fill="both", expand=True, padx=10)
 
-        self.start_pump_button = ttk.Button(pump_control_frame, text="Start Turbo",
+        self.start_pump_button = ttk.Button(pump_control_frame, text="Start Pump",
                             command=self.do_start_pump)
         self.start_pump_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
 
-        self.stop_pump_button = ttk.Button(pump_control_frame, text="Stop Turbo",
+        self.stop_pump_button = ttk.Button(pump_control_frame, text="Stop Pump",
                            command=self.do_stop_pump)
         self.stop_pump_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
 
@@ -279,7 +306,7 @@ class PumpGUI:
         save_button.pack(side="left", padx=5, fill="both", expand=True, ipady=15)
         
     def connect_pump(self):
-        """Establish serial connection to pump"""
+        """Establish serial connection to pump and relay"""
         try:
             self.ser = open_comm()
             units = get_pressure_units(self.ser)
@@ -298,6 +325,18 @@ class PumpGUI:
         except Exception as e:
             messagebox.showerror("Connection Error", f"Failed to connect to pump:\n{str(e)}")
             self.status_label.config(text="Connection Failed", foreground="red")
+
+        # Initialize scroll relay connection
+        try:
+            self.relay_ser = init_relay_comm(port_name="COM2", baud_rate=19200, timeout=1)
+            if self.relay_ser is None:
+                self.relay_status_label.config(text="Connection Failed", foreground="red")
+                messagebox.showwarning("Relay Connection", "Failed to connect to scroll relay.")
+            else:
+                self.relay_status_label.config(text="Connected", foreground="green")
+        except Exception as e:
+            messagebox.showerror("Relay Connection Error", f"Failed to connect to relay:\n{str(e)}")
+            self.relay_status_label.config(text="Connection Failed", foreground="red")
 
     def _initial_display_update(self):
         """Update UI with initial data from background thread"""
@@ -490,9 +529,56 @@ class PumpGUI:
         if self.ser is None:
             messagebox.showwarning("Warning", "Pump not connected")
             return
+        if self.relay_ser is None:
+            messagebox.showwarning("Warning", "Scroll relay not connected")
+            return
         if self.start_wait_dialog is not None:
             messagebox.showinfo("Pump Command", "Already waiting for pressure <5e-1 Torr.")
             return
+
+        # Confirm valve states before proceeding
+        if not messagebox.askyesno("Valve Confirmation", "Are all valves in their correct state (open/closed)?"):
+            return
+
+        # Check turbo speed is 0 rpm
+        try:
+            if self.pump_reader:
+                data = self.pump_reader.get_data()
+                turbo = data.get('turbo')
+            else:
+                with self.serial_lock:
+                    turbo = get_turbo_speed(self.ser)
+            turbo_num = self._parse_pressure_value(turbo)
+        except Exception as e:
+            messagebox.showerror("Turbo Read Error", f"Failed to read turbo speed:\n{e}")
+            return
+
+        if turbo_num is None or turbo_num != 0:
+            messagebox.showerror("Cannot Start Pump", f"Turbo speed must be 0 rpm before starting. Current speed: {turbo} rpm")
+            return
+
+        # Check that turbo is not in starting/stopping state
+        if 0 < turbo_num <= 70000:
+            messagebox.showerror("Cannot Start Pump", f"Turbo is currently starting/stopping. Please wait for it to reach 0 rpm or at speed (>70000 rpm)")
+            return
+
+        # Check relay status and turn on if needed
+        try:
+            relay_number = 0
+            with self.relay_lock:
+                relay_state = read_relay_state(self.relay_ser, relay_number)
+
+            if relay_state is not None:
+                relay_state_normalized = relay_state.strip().lower()
+                if relay_state_normalized == "off":
+                    with self.relay_lock:
+                        turn_on_relay(self.relay_ser, relay_number)
+                    messagebox.showinfo("Relay", "Relay was off. Turned it on.")
+        except Exception as e:
+            messagebox.showerror("Relay Error", f"Failed to check/control relay:\n{e}")
+            return
+
+        # Continue with normal pressure reading and wait procedure
         try:
             if self.pump_reader:
                 data = self.pump_reader.get_data()
@@ -544,6 +630,7 @@ class PumpGUI:
                     with self.serial_lock:
                         if not start_pump(self.ser):
                             raise Exception("Pump did not acknowledge start command")
+                    self.turbo_start_time = time.time()
                     messagebox.showinfo("Pump Command", "Start command sent")
                 except Exception as e:
                     messagebox.showerror("Pump Error", f"Failed to send start command:\n{e}")
@@ -672,10 +759,65 @@ class PumpGUI:
         self.start_wait_callback = self.root.after(1000, self._poll_pressure_then_start)
 
     def do_stop_pump(self):
-        """Send stop command to the pump"""
+        """Check relay status and turn off if needed, then send stop command to the pump"""
         if self.ser is None:
             messagebox.showwarning("Warning", "Pump not connected")
             return
+        if self.relay_ser is None:
+            messagebox.showwarning("Warning", "Scroll relay not connected")
+            return
+
+        # Confirm valve states before proceeding
+        if not messagebox.askyesno("Valve Confirmation", "Are all valves in their correct state (open/closed)?"):
+            return
+
+        # Check turbo speed is either at speed or at 0 rpm (not starting/stopping)
+        try:
+            if self.pump_reader:
+                data = self.pump_reader.get_data()
+                turbo = data.get('turbo')
+            else:
+                with self.serial_lock:
+                    turbo = get_turbo_speed(self.ser)
+            turbo_num = self._parse_pressure_value(turbo)
+        except Exception as e:
+            messagebox.showerror("Turbo Read Error", f"Failed to read turbo speed:\n{e}")
+            return
+
+        # Check that turbo is not in starting/stopping state
+        if turbo_num is not None and 0 < turbo_num <= 70000:
+            messagebox.showerror("Cannot Stop Pump", f"Turbo is currently starting/stopping. Please wait for it to reach at speed (>70000 rpm) or 0 rpm")
+            return
+
+        # Check if turbo was started less than 10 minutes ago
+        if self.turbo_start_time is not None:
+            elapsed_time = time.time() - self.turbo_start_time
+            if elapsed_time < 600:  # 600 seconds = 10 minutes
+                minutes_remaining = int((600 - elapsed_time) / 60)
+                seconds_remaining = int((600 - elapsed_time) % 60)
+                messagebox.showerror("Cannot Stop Pump",
+                    f"Turbo cannot be stopped within 10 minutes of starting.\n"
+                    f"Time remaining: {minutes_remaining:02d}:{seconds_remaining:02d}")
+                return
+
+        # Check relay status and turn off if needed
+        try:
+            relay_number = 0
+            with self.relay_lock:
+                relay_state = read_relay_state(self.relay_ser, relay_number)
+
+            if relay_state is not None:
+                relay_state_normalized = relay_state.strip().lower()
+                if relay_state_normalized == "on":
+                    with self.relay_lock:
+                        turn_off_relay(self.relay_ser, relay_number)
+                    messagebox.showinfo("Relay", "Relay was on. Turned it off.")
+                    return
+        except Exception as e:
+            messagebox.showerror("Relay Error", f"Failed to check/control relay:\n{e}")
+            return
+
+        # Continue with normal turbo control logic
         try:
             with self.serial_lock:
                 stop_pump(self.ser)
@@ -702,6 +844,11 @@ class PumpGUI:
                 close_comm(self.ser)
             except Exception as e:
                 print(f"Error closing serial connection: {e}")
+        if self.relay_ser:
+            try:
+                close_relay_comm(self.relay_ser)
+            except Exception as e:
+                print(f"Error closing relay connection: {e}")
         self.root.destroy()
 
     def save_plot_csv(self):

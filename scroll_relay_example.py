@@ -13,15 +13,19 @@
  
 #This demo code demonstrates how to turn ON, OFF, read a relay, set, clear, read a GPIO and read an analog channel.
 
+
+
 '''Prerequisites : Python 3.x , install serial module using pip'''
 
 import serial
- 
-def send_command(ser_port, command):
-    """Send command to the serial port and read the response."""
-    ser_port.write(command.encode())
-    response = ser_port.read(25).decode()
-    return response
+from scroll_relay_helpers import (
+    init_relay_comm,
+    close_relay_comm,
+    send_command,
+    turn_on_relay,
+    turn_off_relay,
+    read_relay_state
+)
  
 def main():
     port_name = "COM1"  # Replace with your actual COM port
