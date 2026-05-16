@@ -18,7 +18,7 @@
 
 import serial
 
-def init_relay_comm(port_name = "COM7", baud_rate=19200, timeout=1):
+def init_relay_comm(port_name = "COM8", baud_rate=19200, timeout=1):
     try:
         print(f"Opening serial port {port_name} with baud rate {baud_rate} and timeout {timeout}.")
         ser = serial.Serial(port_name, baud_rate, timeout=timeout)

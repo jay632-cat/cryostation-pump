@@ -195,8 +195,9 @@ class PumpGUI:
         relay_status_frame = ttk.Frame(status_container)
         relay_status_frame.pack(side="left", pady=5)
         ttk.Label(relay_status_frame, text="Scroll Relay:").pack(side="left")
-        self.relay_status_label = ttk.Label(relay_status_frame, text="Disconnected",
-                                           foreground="red", font=("Arial", 10))
+        self.relay_status_var = tk.StringVar(value="Relay Status: Disconnected")
+        self.relay_status_label = ttk.Label(relay_status_frame, textvariable=self.relay_status_var,
+                           foreground="red", font=("Arial", 10))
         self.relay_status_label.pack(side="left", padx=(10, 0))
 
         # Pressure display frame
@@ -241,6 +242,11 @@ class PumpGUI:
         self.tipseal_label = ttk.Label(pressure_frame, text="Tip Seal Life: -- hr",
                            font=("Arial", 12))
         self.tipseal_label.pack()
+
+        # Relay status (mirrored under tip seal life)
+        self.relay_under_label = ttk.Label(pressure_frame, textvariable=self.relay_status_var,
+                           font=("Arial", 12), foreground="red")
+        self.relay_under_label.pack()
 
         # Chart area on right_frame (matplotlib)
         self.plot_canvas = None
@@ -327,16 +333,55 @@ class PumpGUI:
             self.status_label.config(text="Connection Failed", foreground="red")
 
         # Initialize scroll relay connection
-        try:
-            self.relay_ser = init_relay_comm(port_name="COM2", baud_rate=19200, timeout=1)
-            if self.relay_ser is None:
-                self.relay_status_label.config(text="Connection Failed", foreground="red")
-                messagebox.showwarning("Relay Connection", "Failed to connect to scroll relay.")
-            else:
-                self.relay_status_label.config(text="Connected", foreground="green")
-        except Exception as e:
-            messagebox.showerror("Relay Connection Error", f"Failed to connect to relay:\n{str(e)}")
-            self.relay_status_label.config(text="Connection Failed", foreground="red")
+            # try:
+            #     self.relay_ser = init_relay_comm()
+            #     if self.relay_ser is None:
+            #         self.relay_status_var.set("Relay Status: Connection Failed")
+            #         self.relay_status_label.config(foreground="red")
+            #         try:
+            #             self.relay_under_label.config(foreground="red")
+            #         except Exception:
+            #             pass
+            #         messagebox.showwarning("Relay Connection", "Failed to connect to scroll relay.")
+            #     else:
+            #         # read actual relay on/off state and display as On/Off
+            #         try:
+            #             relay_number = 0
+            #             with self.relay_lock:
+            #                 rstate = read_relay_state(self.relay_ser, relay_number)
+            #             if rstate is not None:
+            #                 rnorm = rstate.strip().lower()
+            #                 if rnorm == "on":
+            #                     self.relay_status_var.set("Relay Status: On")
+            #                     self.relay_status_label.config(foreground="green")
+            #                     try:
+            #                         self.relay_under_label.config(foreground="green")
+            #                     except Exception:
+            #                         pass
+            #                 elif rnorm == "off":
+            #                     self.relay_status_var.set("Relay Status: Off")
+            #                     self.relay_status_label.config(foreground="red")
+            #                     try:
+            #                         self.relay_under_label.config(foreground="red")
+            #                     except Exception:
+            #                         pass
+            #                 else:
+            #                     self.relay_status_var.set("Relay Status: Unknown")
+            #                     self.relay_status_label.config(foreground="gray")
+            #             else:
+            #                 self.relay_status_var.set("Relay Status: Connected")
+            #                 self.relay_status_label.config(foreground="green")
+            #         except Exception:
+            #             self.relay_status_var.set("Relay Status: Connected")
+            #             self.relay_status_label.config(foreground="green")
+            # except Exception as e:
+            #     messagebox.showerror("Relay Connection Error", f"Failed to connect to relay:\n{str(e)}")
+            #     self.relay_status_var.set("Relay Status: Connection Failed")
+            #     self.relay_status_label.config(foreground="red")
+            #     try:
+            #         self.relay_under_label.config(foreground="red")
+            #     except Exception:
+            #         pass
 
     def _initial_display_update(self):
         """Update UI with initial data from background thread"""
@@ -529,9 +574,9 @@ class PumpGUI:
         if self.ser is None:
             messagebox.showwarning("Warning", "Pump not connected")
             return
-        if self.relay_ser is None:
-            messagebox.showwarning("Warning", "Scroll relay not connected")
-            return
+        # if self.relay_ser is None:
+        #     messagebox.showwarning("Warning", "Scroll relay not connected")
+        #     return
         if self.start_wait_dialog is not None:
             messagebox.showinfo("Pump Command", "Already waiting for pressure <5e-1 Torr.")
             return
@@ -563,20 +608,26 @@ class PumpGUI:
             return
 
         # Check relay status and turn on if needed
-        try:
-            relay_number = 0
-            with self.relay_lock:
-                relay_state = read_relay_state(self.relay_ser, relay_number)
+        # try:
+        #     relay_number = 0
+        #     with self.relay_lock:
+        #         relay_state = read_relay_state(self.relay_ser, relay_number)
 
-            if relay_state is not None:
-                relay_state_normalized = relay_state.strip().lower()
-                if relay_state_normalized == "off":
-                    with self.relay_lock:
-                        turn_on_relay(self.relay_ser, relay_number)
-                    messagebox.showinfo("Relay", "Relay was off. Turned it on.")
-        except Exception as e:
-            messagebox.showerror("Relay Error", f"Failed to check/control relay:\n{e}")
-            return
+        #     if relay_state is not None:
+        #         relay_state_normalized = relay_state.strip().lower()
+        #         if relay_state_normalized == "off":
+        #             with self.relay_lock:
+        #                 turn_on_relay(self.relay_ser, relay_number)
+        #             messagebox.showinfo("Relay", "Relay was off. Turned it on.")
+        #             try:
+        #                 self.relay_status_var.set("Relay Status: On")
+        #                 self.relay_status_label.config(foreground="green")
+        #                 self.relay_under_label.config(foreground="green")
+        #             except Exception:
+        #                 pass
+        # except Exception as e:
+        #     messagebox.showerror("Relay Error", f"Failed to check/control relay:\n{e}")
+        #     return
 
         # Continue with normal pressure reading and wait procedure
         try:
@@ -801,22 +852,29 @@ class PumpGUI:
                 return
 
         # Check relay status and turn off if needed
-        try:
+        # try:
 
-            relay_number = 0
-            with self.relay_lock:
-                relay_state = read_relay_state(self.relay_ser, relay_number)
+        #     relay_number = 0
+        #     with self.relay_lock:
+        #         relay_state = read_relay_state(self.relay_ser, relay_number)
 
-            if relay_state is not None:
-                relay_state_normalized = relay_state.strip().lower()
-                if relay_state_normalized == "on":
-                    with self.relay_lock:
-                        turn_off_relay(self.relay_ser, relay_number)
-                    messagebox.showinfo("Relay", "Relay was on. Turned it off.")
-                    return
-        except Exception as e:
-            messagebox.showerror("Relay Error", f"Failed to check/control relay:\n{e}")
-            return
+        #     if relay_state is not None:
+        #         relay_state_normalized = relay_state.strip().lower()
+        #         if relay_state_normalized == "on":
+        #             with self.relay_lock:
+        #                 turn_off_relay(self.relay_ser, relay_number)
+        #             messagebox.showinfo("Relay", "Relay was on. Turned it off.")
+        #             # ensure relay has time to settle before commanding the turbo
+        #             time.sleep(0.5)
+        #             try:
+        #                 self.relay_status_var.set("Relay Status: Off")
+        #                 self.relay_status_label.config(foreground="red")
+        #                 self.relay_under_label.config(foreground="red")
+        #             except Exception:
+        #                 pass
+        # except Exception as e:
+        #     messagebox.showerror("Relay Error", f"Failed to check/control relay:\n{e}")
+        #     return
 
         # Continue with normal turbo control logic
         try:
@@ -845,11 +903,11 @@ class PumpGUI:
                 close_comm(self.ser)
             except Exception as e:
                 print(f"Error closing serial connection: {e}")
-        if self.relay_ser:
-            try:
-                close_relay_comm(self.relay_ser)
-            except Exception as e:
-                print(f"Error closing relay connection: {e}")
+        # if self.relay_ser:
+        #     try:
+        #         close_relay_comm(self.relay_ser)
+        #     except Exception as e:
+        #         print(f"Error closing relay connection: {e}")
         self.root.destroy()
 
     def save_plot_csv(self):
