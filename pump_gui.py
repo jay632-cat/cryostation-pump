@@ -802,6 +802,7 @@ class PumpGUI:
 
         # Check relay status and turn off if needed
         try:
+
             relay_number = 0
             with self.relay_lock:
                 relay_state = read_relay_state(self.relay_ser, relay_number)
