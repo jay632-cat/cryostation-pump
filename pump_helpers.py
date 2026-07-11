@@ -6,14 +6,31 @@ import re
 import keyboard
 from datetime import datetime
 
-def open_comm():
+def open_comm(port='COM6', reply_timeout=0.25):
     """Opens an RS-232 connection to pump"""
     ports = serial.tools.list_ports.comports()
-    for port in ports:
-        print(f"Port: {port.device}, Description: {port.description}, HWID: {port.hwid}")
+    for port_info in ports:
+        print(f"Port: {port_info.device}, Description: {port_info.description}, HWID: {port_info.hwid}")
 
-    # Open a serial port
-    ser = serial.Serial('COM6', 9600, timeout=1)
+    # Guard against callers accidentally passing a Serial object instead of a COM string.
+    if port is None:
+        port = 'COM6'
+    elif not isinstance(port, str):
+        guessed_port = getattr(port, 'port', None)
+        if isinstance(guessed_port, str) and guessed_port:
+            port = guessed_port
+        else:
+            raise TypeError("open_comm(port=...) expects a COM port string, e.g. 'COM6'")
+
+    # Open a serial port with a short reply timeout so the GUI does not appear hung
+    try:
+        timeout_value = float(reply_timeout)
+    except Exception:
+        timeout_value = 0.25
+    if timeout_value <= 0:
+        timeout_value = 0.25
+
+    ser = serial.Serial(port, 9600, timeout=timeout_value, write_timeout=timeout_value)
 
     # Set pump into serial mode
     set_serial(ser)
