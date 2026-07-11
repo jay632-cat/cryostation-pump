@@ -14,7 +14,7 @@
 #This demo code demonstrates how to turn ON, OFF, read a relay, set, clear, read a GPIO and read an analog channel.
 
 
-
+#%%
 '''Prerequisites : Python 3.x , install serial module using pip'''
 
 import serial
