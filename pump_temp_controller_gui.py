@@ -263,12 +263,23 @@ class IntegratedCryoGUI(tk.Tk):
         temp_box = ttk.LabelFrame(ls_box, text="Temperature", padding=6)
         temp_box.pack(fill="x", pady=(6, 0))
 
+        self.ls_temp_colors = {
+            "A": "#1f77b4",
+            "B": "#ff7f0e",
+            "C": "#2ca02c",
+            "D": "#d62728",
+        }
         self.ls_temp_vars = {}
         for idx, (channel, label_text) in enumerate(self.temp_channels):
             ttk.Label(temp_box, text=f"{label_text}:").grid(row=idx, column=0, sticky="w")
             var = tk.StringVar(value="---")
             self.ls_temp_vars[channel] = var
-            ttk.Label(temp_box, textvariable=var, font=("Arial", 12, "bold")).grid(row=idx, column=1, sticky="w", padx=(6, 0))
+            tk.Label(
+                temp_box,
+                textvariable=var,
+                font=("Arial", 12, "bold"),
+                fg=self.ls_temp_colors.get(channel, "black"),
+            ).grid(row=idx, column=1, sticky="w", padx=(6, 0))
 
         self.ls_heater_status_vars = {}
         for offset, heater_channel in enumerate((1, 2)):
@@ -392,10 +403,10 @@ class IntegratedCryoGUI(tk.Tk):
 
         self.ls_plot_lines = {}
         colors = {
-            "A": "tab:blue",
-            "B": "tab:orange",
-            "C": "tab:green",
-            "D": "tab:red",
+            "A": "#1f77b4",
+            "B": "#ff7f0e",
+            "C": "#2ca02c",
+            "D": "#d62728",
         }
         labels = {
             "A": "Sample (A)",
