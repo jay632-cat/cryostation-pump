@@ -504,9 +504,9 @@ class LS336GUI(tk.Tk):
                     if _HAS_HELPERS and hasattr(ls336_helpers, "get_heater_status"):
                         raw_status = ls336_helpers.get_heater_status(self.instrument, heater_channel)
                     else:
-                        raw_status = self.instrument.query(f"RANGE? {heater_channel}")
-                    normalized = int(str(raw_status).strip())
-                    self.heater_status_vars[heater_channel].set(heater_status_map.get(normalized, str(raw_status).strip()))
+                        raw_status = self.instrument.query(f"HTRST? {heater_channel}")
+                    normalized = int(raw_status)
+                    self.heater_status_vars[heater_channel].set(heater_status_map.get(normalized, str(normalized)))
                 except Exception:
                     self.heater_status_vars[heater_channel].set("Read error")
 

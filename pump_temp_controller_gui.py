@@ -570,9 +570,9 @@ class IntegratedCryoGUI(tk.Tk):
                     if HAS_LS_HELPERS and hasattr(ls336_helpers, "get_heater_status"):
                         raw = ls336_helpers.get_heater_status(self.ls_instrument, heater_channel)
                     else:
-                        raw = self.ls_instrument.query(f"RANGE? {heater_channel}")
-                    value = int(str(raw).strip())
-                    self.ls_heater_status_vars[heater_channel].set(heater_status_map.get(value, str(raw).strip()))
+                        raw = self.ls_instrument.query(f"HTRST? {heater_channel}")
+                    value = int(raw)
+                    self.ls_heater_status_vars[heater_channel].set(heater_status_map.get(value, str(value)))
                 except Exception:
                     self.ls_heater_status_vars[heater_channel].set("Read error")
 

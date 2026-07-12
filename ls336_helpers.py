@@ -69,14 +69,20 @@ def get_heater_status(ls336, channel):
     # Channel: 1 = sample, 2 = rad shield
     if channel not in [1,2]:
         raise ValueError("Channel must be 1 or 2")
-    return ls336.query("RANGE? "+str(channel))
+    status = ls336.query("HTRST? "+str(channel))
+    # Return the heater state as a number from 0 to 3: off, low, medium, high.
+    return int(str(status).strip())
 
 def go_to_room_temp(ls336):
     print("Going to room temperature...")
     # Check chuck and rad shield temps, if they are above 300, turn off heaters and wait for cooldown
     chuck_temp = get_temp(ls336, 'A')
     rad_temp = get_temp(ls336, 'B')
-    if chuck_temp > 300 or rad_temp > 300:
+    if is_rt(chuck_temp) and is_rt(rad_temp):
+        print("Chuck and rad shield temps are already at room temperature, turning off heaters...")
+        set_heater_range(ls336, 1, 0)
+        set_heater_range(ls336, 2, 0)
+    elif chuck_temp > 300 or rad_temp > 300:
         print("Chuck or rad shield temp above 300K, turning off heaters...")
         set_heater_range(ls336, 1, 0)
         set_heater_range(ls336, 2, 0)
@@ -89,6 +95,9 @@ def go_to_room_temp(ls336):
         set_heater_range(ls336, 1, 3)
         set_heater_range(ls336, 2, 3)
 
+def is_rt(temp):
+    return temp >= 295 and temp <= 300
+
 def set_chuck_temp(ls336, temp):
     curtemp = get_temp(ls336, 'A')
     if temp > 350:
@@ -99,24 +108,21 @@ def set_chuck_temp(ls336, temp):
         set_heater_pid(ls336, 1, 65, 35, 0)
         set_temp_setpt(ls336, 1, temp)
         set_heater_range(ls336, 1, 3)
-    elif temp <= 300 and temp >= 295:
+    elif temp <= 300 and temp >= 25:
         print("Setting chuck temp to "+str(temp)+" K...")
         print("Make sure CCR is on!")
         set_heater_pid(ls336, 1, 75, 35, 0)
         set_temp_setpt(ls336, 1, temp)
         set_heater_range(ls336, 1, 3)
-    elif temp < 295 and temp >= 25:
-        print("Setting chuck temp to "+str(temp)+" K...")
-        set_heater_pid(ls336, 1, 75, 35, 0)
-        set_temp_setpt(ls336, 1, temp)
-        set_heater_range(ls336, 1, 3)
     elif temp < 25 and temp >= 15:
         print("Setting chuck temp to "+str(temp)+" K...")
+        print("Make sure CCR is on!")
         set_heater_pid(ls336, 1, 75, 35, 0)
         set_temp_setpt(ls336, 1, temp)
         set_heater_range(ls336, 1, 2)
     elif temp < 15 and temp >= 10:
         print("Setting chuck temp to "+str(temp)+" K...")
+        print("Make sure CCR is on!")
         set_heater_pid(ls336, 1, 75, 35, 0)
         set_temp_setpt(ls336, 1, temp)
         set_heater_range(ls336, 1, 1)
