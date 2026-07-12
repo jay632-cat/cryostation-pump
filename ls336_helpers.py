@@ -69,7 +69,7 @@ def get_heater_status(ls336, channel):
     # Channel: 1 = sample, 2 = rad shield
     if channel not in [1,2]:
         raise ValueError("Channel must be 1 or 2")
-    return ls336.query("HTRST? "+str(channel))
+    return ls336.query("RANGE? "+str(channel))
 
 def go_to_room_temp(ls336):
     print("Going to room temperature...")

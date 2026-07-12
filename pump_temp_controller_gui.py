@@ -135,6 +135,8 @@ class IntegratedCryoGUI(tk.Tk):
         self.ls_plotting = False
         self.ls_poll_interval_ms = 1000
         self.ls_plot_start_time = None
+        self.room_temp_return_active = False
+        self.room_temp_ready_since = None
         self.temp_channels = [
             ("A", "Sample (A)"),
             ("B", "Rad Shield (B)"),
@@ -512,6 +514,7 @@ class IntegratedCryoGUI(tk.Tk):
     def ls_disconnect(self):
         self.ls_stop_polling()
         self.ls_stop_monitor()
+        self._ls_reset_room_temp_return()
         if self.ls_instrument is not None:
             try:
                 if hasattr(self.ls_instrument, "close"):
@@ -567,11 +570,13 @@ class IntegratedCryoGUI(tk.Tk):
                     if HAS_LS_HELPERS and hasattr(ls336_helpers, "get_heater_status"):
                         raw = ls336_helpers.get_heater_status(self.ls_instrument, heater_channel)
                     else:
-                        raw = self.ls_instrument.query(f"HTRST? {heater_channel}")
+                        raw = self.ls_instrument.query(f"RANGE? {heater_channel}")
                     value = int(str(raw).strip())
                     self.ls_heater_status_vars[heater_channel].set(heater_status_map.get(value, str(raw).strip()))
                 except Exception:
                     self.ls_heater_status_vars[heater_channel].set("Read error")
+
+            self._ls_update_room_temp_return(readings)
 
             if self.ls_plotting:
                 now = datetime.datetime.now()
@@ -717,11 +722,68 @@ class IntegratedCryoGUI(tk.Tk):
             messagebox.showerror("Missing helper", "ls336_helpers.go_to_room_temp() is required.")
             return
 
+        if not messagebox.askyesno("Confirm CCR", "Is the CCR off?\n\nSelect No to cancel."):
+            return
+
         try:
+            self.room_temp_return_active = True
+            self.room_temp_ready_since = None
             ls336_helpers.go_to_room_temp(self.ls_instrument)
-            self.ls_status_var.set("Return-to-room-temperature command sent")
+            self.ls_status_var.set("Return-to-room-temperature routine started")
         except Exception as exc:
+            self._ls_reset_room_temp_return()
             messagebox.showerror("Error", f"Failed to return to room temperature:\n{exc}")
+
+    def _ls_reset_room_temp_return(self):
+        self.room_temp_return_active = False
+        self.room_temp_ready_since = None
+
+    def _ls_turn_off_room_temp_heaters(self):
+        if self.ls_instrument is None:
+            raise RuntimeError("LS336 connection is unavailable")
+        if not HAS_LS_HELPERS or not hasattr(ls336_helpers, "set_heater_range"):
+            raise RuntimeError("ls336_helpers.set_heater_range() is required.")
+
+        ls336_helpers.set_heater_range(self.ls_instrument, 1, 0)
+        ls336_helpers.set_heater_range(self.ls_instrument, 2, 0)
+
+        if hasattr(ls336_helpers, "set_temp_setpt"):
+            ls336_helpers.set_temp_setpt(self.ls_instrument, 1, 295)
+            ls336_helpers.set_temp_setpt(self.ls_instrument, 2, 295)
+
+    def _ls_finish_room_temp_return(self):
+        self._ls_reset_room_temp_return()
+        try:
+            self._ls_turn_off_room_temp_heaters()
+            self.ls_status_var.set("Chamber is at room temperature; heaters turned off")
+            messagebox.showinfo("Room Temperature Reached", "The chamber is at room temperature.")
+        except Exception as exc:
+            messagebox.showerror("Error", f"Failed to turn off heaters after reaching room temperature:\n{exc}")
+
+    def _ls_update_room_temp_return(self, readings):
+        if not self.room_temp_return_active or self.ls_instrument is None:
+            return
+
+        sample_temp = readings.get("A")
+        rad_temp = readings.get("B")
+        in_range = (
+            sample_temp is not None and rad_temp is not None and
+            295.0 <= sample_temp <= 300.0 and
+            295.0 <= rad_temp <= 300.0
+        )
+
+        if not in_range:
+            self.room_temp_ready_since = None
+            return
+
+        now = time.time()
+        if self.room_temp_ready_since is None:
+            self.room_temp_ready_since = now
+            self.ls_status_var.set("Waiting for 15 minutes of stable room temperature")
+            return
+
+        if now - self.room_temp_ready_since >= 15 * 60:
+            self._ls_finish_room_temp_return()
 
     def ls_stop_heater(self):
         if self.ls_instrument is None:
