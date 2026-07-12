@@ -630,8 +630,9 @@ class IntegratedCryoGUI(tk.Tk):
             self.ls_poll_job = None
             if self._closing or self.ls_instrument is None:
                 return
-            self._ls_read_once()
+            # Queue the next poll first so modal dialogs in this tick do not pause polling.
             self.ls_poll_job = self.after(self.ls_poll_interval_ms, _loop)
+            self._ls_read_once()
 
         self.ls_poll_job = self.after(0, _loop)
 
@@ -957,6 +958,9 @@ class IntegratedCryoGUI(tk.Tk):
             self.pump_update_active = False
             return
 
+        # Queue the next update before any modal popup so updates keep running.
+        self.pump_update_job = self.after(self.pump_update_interval_ms, self._pump_update_loop)
+
         try:
             data = self.pump_reader.get_data()
             if data.get("error"):
@@ -1017,9 +1021,13 @@ class IntegratedCryoGUI(tk.Tk):
         except Exception:
             self._pump_show_disconnected_state()
 
-        if self._pump_is_live() and not self._closing:
-            self.pump_update_job = self.after(self.pump_update_interval_ms, self._pump_update_loop)
-        else:
+        if not self._pump_is_live() or self._closing:
+            if self.pump_update_job is not None:
+                try:
+                    self.after_cancel(self.pump_update_job)
+                except Exception:
+                    pass
+                self.pump_update_job = None
             self.pump_update_active = False
 
     def _pump_show_disconnected_state(self):
