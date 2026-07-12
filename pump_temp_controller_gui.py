@@ -713,7 +713,7 @@ class IntegratedCryoGUI(tk.Tk):
 
         if not messagebox.askyesno(
             "Confirm CCR",
-            "Is the CCR on?\n\nSelect No to cancel.\n\nALL NON-RT samples, INCLUDING >300 K temps, require full cooldown to base pressure before heating.",
+            "Is the CCR on?\n\nSelect No to cancel.\n\nALL NON-RT samples, INCLUDING >300 K temps, require full cooldown to base temperature before heating.",
         ):
             return
 
