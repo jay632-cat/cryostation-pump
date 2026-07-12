@@ -1,18 +1,39 @@
-# cryostation-pump
-```markdown
-# Cryostation Pump Monitor
+# Cryostation Integrated Controller
 
-A Python-based GUI application for monitoring and controlling a cryostation pump via RS-232 serial communication. The application displays real-time pressure readings, pump status, turbo speed, and tip seal life, with graphical visualization of pressure trends over time.
+This repository contains GUIs for cryostation control and monitoring.
 
-## Quick Start
-For users:
-1. Double-click `pump_gui.py` from the `cryostation_pump` folder on the computer desktop. The GUI should open along with a command line window.
-2. The command line window monitors the RS232 communication with the pump. Do NOT close or touch this window. Close the GUI with the "Close" button in the GUI or the red X in the top right corner. (This is to ensure that the RS232 serial connection is fully closed upon GUI exit.)
+The default app is the integrated interface that combines LS336 temperature control and pump monitoring in one window.
 
-For superusers (and anyone editing the codebase):
-1. Reference the Agilent TPS-compact manual p. 214 for RS232 command structure.
-2. When tip seal is changed, be sure to reset the tip seal life with `reset_tipseal_life()` in pump_helpers.py. 
+## Default Launch
 
+Run:
+
+python main.py
+
+The integrated GUI keeps all controls/readouts on the left panel and all plots on the right panel.
+
+## Pump COM Port Selection
+
+In the integrated GUI:
+
+1. Go to Pump Controls -> Serial Port.
+2. Click Refresh Ports to populate available COM ports.
+3. Select the desired COM port from the dropdown.
+4. Click Connect Pump.
+
+If no ports are detected, the selector falls back to COM6.
+
+## Alternate Scripts
+
+- integrated_cryo_gui.py: Combined LS336 + pump app.
+- ls336_cryo_gui.py: LS336-only app.
+- pump_gui.py: Pump-only app.
+
+## Notes For Developers
+
+1. RS-232 pump command details: see TPS-compact manual.
+2. After tip seal replacement, use reset_tipseal_life() in pump_helpers.py.
 
 ## Author
-Written by Jerry A. Yang (2026-02-06)
+
+Written by Jerry A. Yang

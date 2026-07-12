@@ -12,72 +12,66 @@
 #application.
  
 #This demo code demonstrates how to turn ON, OFF, read a relay, set, clear, read a GPIO and read an analog channel.
-
-
+#Used with Numato Lab's 1 Channel USB Powered Relay Module, DPDT relay (SKU: USBPOWRL002)
 #%%
 '''Prerequisites : Python 3.x , install serial module using pip'''
 
 import serial
-from scroll_relay_helpers import (
-    init_relay_comm,
-    close_relay_comm,
-    send_command,
-    turn_on_relay,
-    turn_off_relay,
-    read_relay_state
-)
+
+def init_relay_comm(port_name = "COM8", baud_rate=19200, timeout=1):
+    try:
+        print(f"Opening serial port {port_name} with baud rate {baud_rate} and timeout {timeout}.")
+        ser = serial.Serial(port_name, baud_rate, timeout=timeout)
+        print("Serial port opened successfully.")
+        return ser  
+    except serial.SerialException as e:
+        print(f"Error opening serial port: {e}")
+        return None
+
+def close_relay_comm(ser):
+    print("Closing serial connection.")
+    ser.close()
+ 
+def send_command(ser_port, command):
+    """Send command to the serial port and read the response."""
+    ser_port.write(command.encode())
+    response = ser_port.read(25).decode()
+    return response
+
+def turn_on_relay(ser_port, relay_number):
+    if isinstance(relay_number, int) and 0 <= relay_number <= 1:
+        relay_on_command = f"relay on {relay_number}\r"
+        send_command(ser_port, relay_on_command)
+        print(f"Relay {relay_number} ON successfully.")
+    else:
+        print("Error: relay_number must be one of the digits between 0 and 1.")
+
+def turn_off_relay(ser_port, relay_number):
+    if isinstance(relay_number, int) and 0 <= relay_number <= 1:
+        relay_off_command = f"relay off {relay_number}\r"
+        send_command(ser_port, relay_off_command)
+        print(f"Relay {relay_number} OFF successfully.")
+    else:
+        print("Error: relay_number must be one of the digits between 0 and 1.")
+
+def read_relay_state(ser_port, relay_number):
+    if isinstance(relay_number, int) and 0 <= relay_number <= 1:
+        relay_read_command = f"relay read {relay_number}\r"
+        relay_response = send_command(ser_port, relay_read_command)
+        relay_state = relay_response[-5:-3]
+        print(f"Relay {relay_number} state is: {relay_state}")
+        return relay_state
+    else:
+        print("Error: relay_number must be one of the digits between 0 and 1.")
+        return None
  
 def main():
-    port_name = "COM1"  # Replace with your actual COM port
+    port_name = "COM7"  # Replace with your actual COM port
     baud_rate = 19200
     timeout = 1
  
     try:
         with serial.Serial(port_name, baud_rate, timeout=timeout) as ser_port:
-            
-            # ADC Channel
-            adc_channel = 0  
-            
-            if isinstance(adc_channel, int) and 0 <= adc_channel <= 5:
-            
-                # Example 1: Read from ADC channel 0
-                adc_command = f"adc read {adc_channel}\r"
-                adc_response = send_command(ser_port, adc_command)
-                adc_value = adc_response[12:-3]
-                print(f"ADC Read {adc_channel} is: {adc_value}")
-                
-            else:
-                print("Error: adc_channel must be one of the digits between 0 and 5.")
-
-            # GPIO number
-            gpio_number = 5
-            
-            if isinstance(gpio_number, int) and 0 <= gpio_number <= 7:
-                
-                # Example 2: Set GPIO pin 5
-                gpio_set_command = f"gpio set {gpio_number}\r"
-                send_command(ser_port, gpio_set_command)
-                print(f"GPIO {gpio_number} set successfully.")
-     
-                # Example 3: Read GPIO pin 5
-                gpio_read_command = f"gpio read {gpio_number}\r"
-                gpio_response = send_command(ser_port, gpio_read_command)
-                gpio_state = gpio_response[-4:-3]
-                print(f"GPIO {gpio_number} state is: {gpio_state}")
-                
-                # Example 4: Clear GPIO pin 5
-                gpio_clear_command = f"gpio clear {gpio_number}\r"
-                send_command(ser_port, gpio_clear_command)
-                print(f"GPIO {gpio_number} cleared successfully.")
-                
-                # Example 5: Read GPIO pin 5
-                gpio_read_command = f"gpio read {gpio_number}\r"
-                gpio_response = send_command(ser_port, gpio_read_command)
-                gpio_state = gpio_response[-4:-3]
-                print(f"GPIO {gpio_number} state is: {gpio_state}")
-                
-            else:
-                print("Error: GPIO number must be one of the digits between 0 and 7.")
 
             # Relay number
             relay_number = 0
@@ -114,5 +108,3 @@ def main():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
  
-if __name__ == "__main__":
-    main()
