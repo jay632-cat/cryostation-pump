@@ -34,6 +34,7 @@ def open_comm(port='COM6', reply_timeout=0.25):
 
     # Set pump into serial mode
     set_serial(ser)
+    set_softstart_on(ser)
 
     # Turn on turbo speed reading after pump stopped
     # Command: 02 80 31 36 37 31 31 03 
@@ -204,6 +205,38 @@ def set_serial(ser):
     # Command: 02 80 30 30 38 31 30 03 42 41
     print("Setting serial mode...")
     cmd_str = "02803030383130034241"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
+    # Check if the response indicates success
+    if data == b'\x02\x80\x06\x03\x38\x35':
+        success = True
+    else:
+        success = False
+    return success
+
+def set_softstart_on(ser):
+    # Command: 02 80 31 30 30 31 31 03 42 32
+    print("Setting soft start mode...")
+    cmd_str = "02803130303131034232"
+    cmd = bytes.fromhex(cmd_str)
+    print(cmd)
+    ser.write(cmd)
+    data = ser.read(100)
+    print(data)
+    # Check if the response indicates success
+    if data == b'\x02\x80\x06\x03\x38\x35':
+        success = True
+    else:
+        success = False
+    return success
+
+def set_softstart_off(ser):
+    # Command: 02 80 31 30 30 31 30 03 42 33
+    print("Setting soft start mode...")
+    cmd_str = "02803130303130034233"
     cmd = bytes.fromhex(cmd_str)
     print(cmd)
     ser.write(cmd)

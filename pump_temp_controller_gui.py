@@ -1125,6 +1125,10 @@ class IntegratedCryoGUI(tk.Tk):
             messagebox.showerror("Pressure Read Error", f"Failed to read pressure:\n{exc}")
             return
 
+        if pnum is not None and pnum <= 0:
+            messagebox.showwarning("Pump Pressure", "pump pressure not correct")
+            return
+
         threshold = 5e-1
         if pnum is not None and pnum < threshold:
             self._send_start_command()
